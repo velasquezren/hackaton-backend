@@ -30,3 +30,7 @@ httpx>=0.27.0,<0.28.0
 
 # Utilidades de fechas
 python-dateutil>=2.9.0,<3.0.0
+
+# Google Earth Engine Integration
+earthengine-api>=0.1.350,<0.2.0
+google-auth>=2.20.0,<3.0.0

@@ -22,10 +22,12 @@ env = environ.Env(
     GEMINI_MODEL=(str, 'gemini-1.5-flash'),
     # APIs climáticas externas
     OPEN_METEO_BASE_URL=(str, 'https://archive-api.open-meteo.com/v1/archive'),
-    NASA_POWER_BASE_URL=(str, 'https://power.larc.nasa.gov/api/temporal/daily/point'),
     # Modos de operación
     USE_REAL_CLIMATE_DATA=(bool, False),
+    USE_REAL_SATELLITE_DATA=(bool, False),
     USE_GEMINI_ALERTS=(bool, True),
+    PROJECT_ID=(str, ''),
+    GEE_PROJECT_ID=(str, ''),
 )
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -178,13 +180,16 @@ GEMINI_MODEL = env('GEMINI_MODEL')
 
 # APIs de datos climáticos externos
 OPEN_METEO_BASE_URL = env('OPEN_METEO_BASE_URL')
-NASA_POWER_BASE_URL = env('NASA_POWER_BASE_URL')
 
 # Flags de modo de operación
 # False = usar datos mock realistas (desarrollo local sin internet requerido)
 # True  = conectar a APIs externas reales (producción / integración)
 USE_REAL_CLIMATE_DATA = env.bool('USE_REAL_CLIMATE_DATA', default=False)
+USE_REAL_SATELLITE_DATA = env.bool('USE_REAL_SATELLITE_DATA', default=False)
 USE_GEMINI_ALERTS = env.bool('USE_GEMINI_ALERTS', default=True)
+
+# Google Earth Engine
+GEE_PROJECT_ID = env('GEE_PROJECT_ID', default=env('PROJECT_ID', default=''))
 
 # Production and Development Console Logging for GCP Cloud Run
 LOGGING = {
