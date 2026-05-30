@@ -205,6 +205,12 @@ class RegionAdmin(admin.ModelAdmin):
     readonly_fields = ('created_at', 'updated_at', 'interact_map')
     list_filter = ('main_crops',)
 
+    class Media:
+        css = {
+            'all': ('https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',)
+        }
+        js = ('https://unpkg.com/leaflet@1.9.4/dist/leaflet.js',)
+
     fieldsets = (
         ('Información General', {
             'fields': ('name', 'description', 'main_crops', 'area_hectares')
@@ -223,21 +229,17 @@ class RegionAdmin(admin.ModelAdmin):
         lng = obj.longitude if obj and obj.longitude is not None else -63.1820
         
         html = f"""
-        <div style="margin-bottom: 15px; max-width: 800px;">
-            <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
-            <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-            
-            <div id="admin-map" style="width: 100%; height: 350px; border-radius: 8px; border: 1px solid #ccc; box-shadow: inset 0 0 5px rgba(0,0,0,0.1); margin-top: 10px;"></div>
-            <p style="margin-top: 6px; font-size: 11px; color: #7f8c8d;">
-                📍 <em>Haz clic en cualquier punto de Santa Cruz o arrastra el marcador para definir la latitud y longitud automáticamente.</em>
+        <div style="margin-bottom: 15px; max-width: 800px; position: relative;">
+            <div id="admin-map" style="width: 100%; height: 380px; border-radius: 8px; border: 2px solid #475569; position: relative; z-index: 10; display: block; margin-top: 10px; background: #0f172a;"></div>
+            <p style="margin-top: 6px; font-size: 11px; color: #94a3b8; font-weight: 500;">
+                📍 <em>Haz clic en cualquier punto del mapa de Santa Cruz o arrastra el marcador para definir la latitud y longitud automáticamente.</em>
             </p>
             
             <script>
-                document.addEventListener("DOMContentLoaded", function() {{
-                    // Función para inicializar el mapa de forma diferida o directa
+                (function() {{
                     function initAdminMap() {{
                         var container = document.getElementById('admin-map');
-                        if (!container) return;
+                        if (!container || container._leaflet_id) return; // Evitar inicializaciones duplicadas
                         
                         var defaultLat = {lat};
                         var defaultLng = {lng};
@@ -251,6 +253,11 @@ class RegionAdmin(admin.ModelAdmin):
                         var marker = L.marker([defaultLat, defaultLng], {{
                             draggable: true
                         }}).addTo(map);
+                        
+                        // Forzar a Leaflet a recalcular tamaños tras el renderizado inicial
+                        setTimeout(function() {{
+                            map.invalidateSize();
+                        }}, 150);
                         
                         function updateCoordinates(lat, lng) {{
                             var latInput = document.getElementById('id_latitude');
@@ -289,9 +296,20 @@ class RegionAdmin(admin.ModelAdmin):
                         }}
                     }}
                     
-                    // Esperamos brevemente por si Leaflet necesita cargarse
-                    setTimeout(initAdminMap, 200);
-                }});
+                    function tryInit() {{
+                        if (typeof L !== 'undefined' && typeof L.map === 'function') {{
+                            initAdminMap();
+                        }} else {{
+                            setTimeout(tryInit, 100);
+                        }}
+                    }}
+                    
+                    if (document.readyState === 'complete' || document.readyState === 'interactive') {{
+                        tryInit();
+                    }} else {{
+                        document.addEventListener("DOMContentLoaded", tryInit);
+                    }}
+                }})();
             </script>
         </div>
         """
