@@ -340,12 +340,60 @@ class ClimatePredictionAdmin(admin.ModelAdmin):
     def pretty_vertex_ai_output(self, obj):
         if not obj.vertex_ai_output:
             return "-"
-        formatted_json = json.dumps(obj.vertex_ai_output, indent=4, ensure_ascii=False)
-        return format_html(
-            '<pre style="background: #f5f5f5; padding: 12px; border-radius: 4px; border: 1px solid #ddd; max-height: 400px; overflow-y: auto;">{}</pre>',
-            formatted_json
-        )
-    pretty_vertex_ai_output.short_description = "Raw JSON"
+        
+        data = obj.vertex_ai_output
+        model_id = data.get("model_id", "N/A")
+        metric = data.get("validation_metric", "N/A")
+        calculated_pct = data.get("calculated_anomaly_pct", 0.0)
+        epochs = data.get("epochs_trained", "N/A")
+        time_ms = data.get("vertex_endpoint_execution_ms", "N/A")
+        features = data.get("features_used", [])
+        
+        features_list = "".join(f"<li style='margin-bottom: 2px;'><code>{f}</code></li>" for f in features)
+        pct_color = "#e65100" if calculated_pct < 0 else "#0d47a1" if calculated_pct > 0 else "#1b5e20"
+        
+        html = f"""
+        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; background: #1e293b; border: 1px solid #334155; border-radius: 8px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); padding: 16px; color: #f1f5f9;">
+            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #334155; padding-bottom: 10px; margin-bottom: 12px;">
+                <span style="font-size: 1.1em; font-weight: bold; color: #38bdf8; display: flex; align-items: center; gap: 6px;">
+                    🤖 {model_id}
+                </span>
+                <span style="font-size: 0.8em; background: #0c4a6e; color: #38bdf8; padding: 4px 8px; border-radius: 12px; font-weight: 600; border: 1px solid #0369a1;">
+                    Vertex AI Live
+                </span>
+            </div>
+            
+            <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-bottom: 16px;">
+                <div>
+                    <strong style="color: #94a3b8; font-size: 0.75em; text-transform: uppercase; letter-spacing: 0.5px;">Métrica de Validación</strong>
+                    <div style="font-size: 0.95em; font-weight: 600; color: #f1f5f9; margin-top: 2px;">{metric}</div>
+                </div>
+                <div>
+                    <strong style="color: #94a3b8; font-size: 0.75em; text-transform: uppercase; letter-spacing: 0.5px;">Desviación Estimada</strong>
+                    <div style="font-size: 1.05em; font-weight: 700; color: {pct_color}; margin-top: 2px;">
+                        {calculated_pct:+.1f}%
+                    </div>
+                </div>
+                <div>
+                    <strong style="color: #94a3b8; font-size: 0.75em; text-transform: uppercase; letter-spacing: 0.5px;">Épocas de Entrenamiento</strong>
+                    <div style="font-size: 0.95em; font-weight: 500; color: #f1f5f9; margin-top: 2px;">{epochs}</div>
+                </div>
+                <div>
+                    <strong style="color: #94a3b8; font-size: 0.75em; text-transform: uppercase; letter-spacing: 0.5px;">Latencia de Inferencia</strong>
+                    <div style="font-size: 0.95em; font-weight: 500; color: #f1f5f9; margin-top: 2px;">{time_ms} ms</div>
+                </div>
+            </div>
+            
+            <div style="border-top: 1px solid #334155; padding-top: 12px; margin-top: 12px;">
+                <strong style="color: #94a3b8; font-size: 0.75em; text-transform: uppercase; letter-spacing: 0.5px; display: block; margin-bottom: 6px;">Variables Predictivas (Features)</strong>
+                <ul style="margin: 0; padding-left: 20px; font-size: 0.85em; color: #cbd5e1; line-height: 1.4;">
+                    {features_list}
+                </ul>
+            </div>
+        </div>
+        """
+        return format_html(html)
+    pretty_vertex_ai_output.short_description = "Detalle del Modelo"
 
     # =========================================================================
     # Acción masiva: Exportar predicciones seleccionadas a CSV
