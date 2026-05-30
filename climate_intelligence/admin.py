@@ -202,7 +202,7 @@ class RegionAdmin(admin.ModelAdmin):
     """
     list_display = ('name', 'main_crops', 'area_hectares', 'coordinates_display', 'prediction_count', 'updated_at')
     search_fields = ('name', 'description', 'main_crops')
-    readonly_fields = ('created_at', 'updated_at')
+    readonly_fields = ('created_at', 'updated_at', 'interact_map')
     list_filter = ('main_crops',)
 
     fieldsets = (
@@ -210,13 +210,93 @@ class RegionAdmin(admin.ModelAdmin):
             'fields': ('name', 'description', 'main_crops', 'area_hectares')
         }),
         ('Ubicación Geoespacial (GIS)', {
-            'fields': ('latitude', 'longitude'),
+            'fields': ('latitude', 'longitude', 'interact_map'),
             'description': 'Coordenadas del epicentro agrícola de la región. Se usan para el mapa interactivo del frontend.'
         }),
         ('Metadatos', {
             'fields': ('created_at', 'updated_at')
         }),
     )
+
+    def interact_map(self, obj=None):
+        lat = obj.latitude if obj and obj.latitude is not None else -17.7830
+        lng = obj.longitude if obj and obj.longitude is not None else -63.1820
+        
+        html = f"""
+        <div style="margin-bottom: 15px; max-width: 800px;">
+            <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+            <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+            
+            <div id="admin-map" style="width: 100%; height: 350px; border-radius: 8px; border: 1px solid #ccc; box-shadow: inset 0 0 5px rgba(0,0,0,0.1); margin-top: 10px;"></div>
+            <p style="margin-top: 6px; font-size: 11px; color: #7f8c8d;">
+                📍 <em>Haz clic en cualquier punto de Santa Cruz o arrastra el marcador para definir la latitud y longitud automáticamente.</em>
+            </p>
+            
+            <script>
+                document.addEventListener("DOMContentLoaded", function() {{
+                    // Función para inicializar el mapa de forma diferida o directa
+                    function initAdminMap() {{
+                        var container = document.getElementById('admin-map');
+                        if (!container) return;
+                        
+                        var defaultLat = {lat};
+                        var defaultLng = {lng};
+                        
+                        var map = L.map('admin-map').setView([defaultLat, defaultLng], 7);
+                        
+                        L.tileLayer('https://{{s}}.basemaps.cartocdn.com/dark_all/{{z}}/{{x}}/{{y}}{{r}}.png', {{
+                            attribution: '&copy; CARTO'
+                        }}).addTo(map);
+                        
+                        var marker = L.marker([defaultLat, defaultLng], {{
+                            draggable: true
+                        }}).addTo(map);
+                        
+                        function updateCoordinates(lat, lng) {{
+                            var latInput = document.getElementById('id_latitude');
+                            var lngInput = document.getElementById('id_longitude');
+                            if (latInput && lngInput) {{
+                                latInput.value = lat.toFixed(6);
+                                lngInput.value = lng.toFixed(6);
+                            }}
+                        }}
+                        
+                        marker.on('dragend', function(e) {{
+                            var position = marker.getLatLng();
+                            updateCoordinates(position.lat, position.lng);
+                        }});
+                        
+                        map.on('click', function(e) {{
+                            var lat = e.latlng.lat;
+                            var lng = e.latlng.lng;
+                            marker.setLatLng([lat, lng]);
+                            updateCoordinates(lat, lng);
+                        }});
+                        
+                        var latInput = document.getElementById('id_latitude');
+                        var lngInput = document.getElementById('id_longitude');
+                        if (latInput && lngInput) {{
+                            function syncMarkerFromInputs() {{
+                                var l = parseFloat(latInput.value);
+                                var g = parseFloat(lngInput.value);
+                                if (!isNaN(l) && !isNaN(g)) {{
+                                    marker.setLatLng([l, g]);
+                                    map.panTo([l, g]);
+                                }}
+                            }}
+                            latInput.addEventListener('input', syncMarkerFromInputs);
+                            lngInput.addEventListener('input', syncMarkerFromInputs);
+                        }}
+                    }}
+                    
+                    // Esperamos brevemente por si Leaflet necesita cargarse
+                    setTimeout(initAdminMap, 200);
+                }});
+            </script>
+        </div>
+        """
+        return format_html(html)
+    interact_map.short_description = "Ubicación en el Mapa"
 
     def coordinates_display(self, obj):
         if obj.latitude and obj.longitude:
