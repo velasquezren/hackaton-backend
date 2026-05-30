@@ -17,6 +17,15 @@ env = environ.Env(
     CORS_ALLOW_ALL_ORIGINS=(bool, False),
     CORS_ALLOWED_ORIGINS=(list, []),
     CSRF_TRUSTED_ORIGINS=(list, []),
+    # Google Gemini LLM para alertas en lenguaje natural
+    GEMINI_API_KEY=(str, ''),
+    GEMINI_MODEL=(str, 'gemini-1.5-flash'),
+    # APIs climáticas externas
+    OPEN_METEO_BASE_URL=(str, 'https://archive-api.open-meteo.com/v1/archive'),
+    NASA_POWER_BASE_URL=(str, 'https://power.larc.nasa.gov/api/temporal/daily/point'),
+    # Modos de operación
+    USE_REAL_CLIMATE_DATA=(bool, False),
+    USE_GEMINI_ALERTS=(bool, True),
 )
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -157,6 +166,25 @@ CSRF_TRUSTED_ORIGINS = env.list('CSRF_TRUSTED_ORIGINS', default=[])
 if DEBUG:
     # Optional debug-only settings can be configured here
     pass
+
+
+# ==============================================================================
+# Configuración del Sistema de Inteligencia Climática
+# ==============================================================================
+
+# Google Gemini — LLM para generar alertas agronómicas en lenguaje natural
+GEMINI_API_KEY = env('GEMINI_API_KEY')
+GEMINI_MODEL = env('GEMINI_MODEL')
+
+# APIs de datos climáticos externos
+OPEN_METEO_BASE_URL = env('OPEN_METEO_BASE_URL')
+NASA_POWER_BASE_URL = env('NASA_POWER_BASE_URL')
+
+# Flags de modo de operación
+# False = usar datos mock realistas (desarrollo local sin internet requerido)
+# True  = conectar a APIs externas reales (producción / integración)
+USE_REAL_CLIMATE_DATA = env.bool('USE_REAL_CLIMATE_DATA', default=False)
+USE_GEMINI_ALERTS = env.bool('USE_GEMINI_ALERTS', default=True)
 
 # Production and Development Console Logging for GCP Cloud Run
 LOGGING = {

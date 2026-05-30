@@ -19,7 +19,7 @@ from django.utils import timezone
 from django.utils.html import format_html
 import json
 
-from .models import Region, ClimatePrediction
+from .models import Region, ClimatePrediction, ClimateAlert, SatelliteObservation, ClimateDataSource
 
 
 # =============================================================================
@@ -412,3 +412,160 @@ class ClimatePredictionAdmin(admin.ModelAdmin):
         )
 
         return response
+
+
+# =============================================================================
+# Administración de Alertas Climáticas
+# =============================================================================
+
+@admin.register(ClimateAlert)
+class ClimateAlertAdmin(admin.ModelAdmin):
+    """
+    Panel administrativo para gestionar las alertas climáticas en lenguaje natural.
+    """
+    list_display = (
+        'alert_level_badge', 'title_excerpt', 'region_name',
+        'anomaly_type_display', 'generated_by', 'is_sent', 'created_at'
+    )
+    list_filter = ('alert_level', 'is_sent', 'generated_by', 'prediction__region')
+    search_fields = ('title', 'message_short', 'prediction__region__name')
+    readonly_fields = ('created_at', 'updated_at', 'tips_list_display')
+    actions = ['mark_as_sent', 'mark_as_unsent']
+
+    fieldsets = (
+        ('Identificación', {
+            'fields': ('prediction', 'alert_level')
+        }),
+        ('Contenido de la Alerta', {
+            'fields': ('title', 'message_short', 'message_long')
+        }),
+        ('Recomendaciones Agronómicas', {
+            'fields': ('tips_list_display',)
+        }),
+        ('Estado y Trazabilidad', {
+            'fields': ('generated_by', 'is_sent', 'created_at', 'updated_at')
+        }),
+    )
+
+    def region_name(self, obj):
+        return obj.prediction.region.name if obj.prediction else '-'
+    region_name.short_description = 'Región'
+
+    def anomaly_type_display(self, obj):
+        if not obj.prediction:
+            return '-'
+        colors = {
+            'SEQUIA': ('#e65100', '#fff3e0', '🌵 Sequía'),
+            'INUNDACION': ('#0d47a1', '#e3f2fd', '🌊 Inundación'),
+            'NORMAL': ('#1b5e20', '#e8f5e9', '✅ Normal'),
+        }
+        t, bg, label = colors.get(obj.prediction.anomaly_type, ('#333', '#eee', '-'))
+        return format_html(
+            '<span style="color:{};background:{};padding:3px 8px;border-radius:4px;font-weight:bold">{}</span>',
+            t, bg, label
+        )
+    anomaly_type_display.short_description = 'Anomalía'
+
+    def alert_level_badge(self, obj):
+        colors = {
+            'LOW': ('#2e7d32', '#e8f5e9', '🟢 Bajo'),
+            'MEDIUM': ('#e65100', '#fff3e0', '🟡 Medio'),
+            'HIGH': ('#b71c1c', '#ffebee', '🔴 Alto'),
+            'EXTREME': ('#4a148c', '#f3e5f5', '🟣 Extremo'),
+        }
+        t, bg, label = colors.get(obj.alert_level, ('#333', '#eee', obj.alert_level))
+        return format_html(
+            '<span style="color:{};background:{};padding:4px 10px;border-radius:12px;font-weight:bold;font-size:0.85rem">{}</span>',
+            t, bg, label
+        )
+    alert_level_badge.short_description = 'Nivel'
+
+    def title_excerpt(self, obj):
+        if obj.title and len(obj.title) > 55:
+            return f'{obj.title[:52]}...'
+        return obj.title or '-'
+    title_excerpt.short_description = 'Título'
+
+    def tips_list_display(self, obj):
+        if not obj.agronomic_tips:
+            return '-'
+        items = ''.join(f'<li style="margin:4px 0">{tip}</li>' for tip in obj.agronomic_tips)
+        return format_html(
+            '<ul style="margin:0;padding-left:20px;list-style:disc">{}</ul>', items
+        )
+    tips_list_display.short_description = 'Recomendaciones Agronómicas'
+
+    @admin.action(description='📤 Marcar seleccionadas como ENVIADAS')
+    def mark_as_sent(self, request, queryset):
+        updated = queryset.update(is_sent=True)
+        self.message_user(request, f'✅ {updated} alertas marcadas como enviadas.')
+
+    @admin.action(description='🔄 Marcar seleccionadas como NO enviadas')
+    def mark_as_unsent(self, request, queryset):
+        updated = queryset.update(is_sent=False)
+        self.message_user(request, f'✅ {updated} alertas marcadas como no enviadas.')
+
+
+# =============================================================================
+# Administración de Observaciones Satelitales
+# =============================================================================
+
+@admin.register(SatelliteObservation)
+class SatelliteObservationAdmin(admin.ModelAdmin):
+    """
+    Panel administrativo para monitoreo satelital NDVI/NDWI por región.
+    """
+    list_display = (
+        'region', 'obs_date', 'ndvi_bar', 'ndwi_display',
+        'cloud_cover_pct', 'source', 'created_at'
+    )
+    list_filter = ('source', 'region', 'obs_date')
+    search_fields = ('region__name',)
+    readonly_fields = ('created_at',)
+    date_hierarchy = 'obs_date'
+
+    def ndvi_bar(self, obj):
+        if obj.ndvi is None:
+            return '-'
+        # NDVI: -1 a 1. Normalizar a 0-100% para la barra
+        pct = int((obj.ndvi + 1) / 2 * 100)
+        color = '#81c784' if obj.ndvi > 0.5 else '#ffb74d' if obj.ndvi > 0.3 else '#e57373'
+        return format_html(
+            '<div style="background:#eee;width:90px;height:10px;border-radius:5px;overflow:hidden;display:inline-block;vertical-align:middle;margin-right:6px">'
+            '<div style="background:{};width:{}%;height:100%"></div></div><span>{:.3f}</span>',
+            color, pct, obj.ndvi
+        )
+    ndvi_bar.short_description = 'NDVI'
+
+    def ndwi_display(self, obj):
+        if obj.ndwi is None:
+            return '-'
+        color = '#1565c0' if obj.ndwi > 0.0 else '#e65100'
+        return format_html(
+            '<span style="color:{};font-weight:500">{:.3f}</span>',
+            color, obj.ndwi
+        )
+    ndwi_display.short_description = 'NDWI'
+
+
+# =============================================================================
+# Administración de Datos Climáticos
+# =============================================================================
+
+@admin.register(ClimateDataSource)
+class ClimateDataSourceAdmin(admin.ModelAdmin):
+    """
+    Panel administrativo para los datos climáticos históricos ingestados.
+    """
+    list_display = (
+        'region', 'date', 'variable_name', 'value_display', 'unit',
+        'source_name', 'fetched_at'
+    )
+    list_filter = ('source_name', 'variable_name', 'region')
+    search_fields = ('region__name', 'variable_name')
+    readonly_fields = ('fetched_at',)
+    date_hierarchy = 'date'
+
+    def value_display(self, obj):
+        return f'{obj.value:.3f}' if obj.value is not None else '-'
+    value_display.short_description = 'Valor'
