@@ -1,0 +1,23 @@
+# Core Web Framework
+Django>=5.0.6,<5.1.0
+
+# Asynchronous API Framework
+django-ninja>=1.1.0,<1.2.0
+pydantic>=2.0,<3.0
+
+# Database Engine
+psycopg2-binary>=2.9.9,<3.0.0
+
+# Production Servers (WSGI + ASGI)
+gunicorn>=22.0.0,<23.0.0
+uvicorn[standard]>=0.30.1,<0.31.0
+
+# Static File Management
+whitenoise>=6.7.0,<7.0.0
+
+# Configuration and CORS
+django-environ>=0.11.2,<0.12.0
+django-cors-headers>=4.3.1,<5.0.0
+
+# AI Integration
+google-cloud-aiplatform>=1.53.0,<2.0.0

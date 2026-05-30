@@ -1,0 +1,1 @@
+# Make migrations a package.

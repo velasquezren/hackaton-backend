@@ -1,0 +1,46 @@
+version: '3.8'
+
+services:
+  # ==========================================
+  # Servicio de Base de Datos (PostgreSQL)
+  # ==========================================
+  db:
+    image: postgres:15-alpine
+    container_name: agritech_db
+    restart: always
+    environment:
+      - POSTGRES_DB=agritech
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      # Volumen persistente para evitar perder datos al apagar el contenedor
+      - postgres_data:/var/lib/postgresql/data
+
+  # ==========================================
+  # Servicio Web Django (Django Ninja)
+  # ==========================================
+  web:
+    build: .
+    container_name: agritech_web
+    restart: always
+    # Sobrescribimos el comando por defecto para desarrollo con auto-reload habilitado
+    command: python manage.py runserver 0.0.0.0:8000
+    ports:
+      - "8000:8000"
+    volumes:
+      # Sincroniza en caliente los cambios de código del host al contenedor (Hot Reload)
+      - .:/app
+    environment:
+      - DEBUG=True
+      - SECRET_KEY=django-insecure-development-only-not-for-prod-hackathon-2026
+      - DATABASE_URL=postgres://postgres:postgres@db:5432/agritech
+      - ALLOWED_HOSTS=*
+      - CORS_ALLOW_ALL_ORIGINS=True
+    depends_on:
+      - db
+
+volumes:
+  # Definición del volumen persistente para PostgreSQL
+  postgres_data:
