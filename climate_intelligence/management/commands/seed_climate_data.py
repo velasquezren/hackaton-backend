@@ -20,23 +20,43 @@ class Command(BaseCommand):
             regions_data = [
                 {
                     "name": "Norte Integrado",
-                    "description": "La zona agroindustrial más productiva de Bolivia (Montero, Minero, Yapacaní). Principal productora de soya, caña de azúcar y arroz. Altamente vulnerable a inundaciones severas por los desbordamientos de los ríos Piraí y Grande en época de lluvias."
+                    "description": "La zona agroindustrial más productiva de Bolivia (Montero, Minero, Yapacaní). Principal productora de soya, caña de azúcar y arroz. Altamente vulnerable a inundaciones severas por los desbordamientos de los ríos Piraí y Grande en época de lluvias.",
+                    "latitude": -17.33,
+                    "longitude": -63.25,
+                    "main_crops": "Soya, Caña de Azúcar, Arroz, Maíz",
+                    "area_hectares": 450000,
                 },
                 {
                     "name": "Valles Cruceños",
-                    "description": "Zona templada y montañosa (Samaipata, Vallegrande, Comarapa). Proveedora clave de hortalizas, frutas y papa para el consumo nacional. Susceptible a sequías agudas, estrés hídrico de invierno y heladas repentinas."
+                    "description": "Zona templada y montañosa (Samaipata, Vallegrande, Comarapa). Proveedora clave de hortalizas, frutas y papa para el consumo nacional. Susceptible a sequías agudas, estrés hídrico de invierno y heladas repentinas.",
+                    "latitude": -18.48,
+                    "longitude": -64.10,
+                    "main_crops": "Papa, Tomate, Hortalizas, Frutales",
+                    "area_hectares": 85000,
                 },
                 {
                     "name": "Chiquitania",
-                    "description": "Extensa sabana boscosa y ganadera (San Ignacio de Velasco, Concepción, Roboré). Altas temperaturas y vientos secos. Críticamente vulnerable a sequías estacionales severas y a la propagación de incendios forestales incontrolables durante el invierno."
+                    "description": "Extensa sabana boscosa y ganadera (San Ignacio de Velasco, Concepción, Roboré). Altas temperaturas y vientos secos. Críticamente vulnerable a sequías estacionales severas y a la propagación de incendios forestales incontrolables durante el invierno.",
+                    "latitude": -16.37,
+                    "longitude": -60.95,
+                    "main_crops": "Ganadería Bovina, Sésamo, Sorgo",
+                    "area_hectares": 320000,
                 },
                 {
                     "name": "Chaco Cruceño",
-                    "description": "Ecosistema semiárido y ganadero del sur (Camiri, Charagua). Históricamente el área con el mayor déficit hídrico del departamento, registrando sequías extremas recurrentes, desertificación de suelos y alto estrés térmico ganadero."
+                    "description": "Ecosistema semiárido y ganadero del sur (Camiri, Charagua). Históricamente el área con el mayor déficit hídrico del departamento, registrando sequías extremas recurrentes, desertificación de suelos y alto estrés térmico ganadero.",
+                    "latitude": -20.03,
+                    "longitude": -63.52,
+                    "main_crops": "Ganadería Caprina, Maíz, Sorgo",
+                    "area_hectares": 180000,
                 },
                 {
                     "name": "Pantanal / Germán Busch",
-                    "description": "Humedal megadiverso de la frontera este (Puerto Suárez, Puerto Quijarro). Zonas de navegación, puertos e influencia hidrológica del Río Paraguay. Presenta dinámicas cíclicas de inundación estacional y variabilidad en los niveles del río."
+                    "description": "Humedal megadiverso de la frontera este (Puerto Suárez, Puerto Quijarro). Zonas de navegación, puertos e influencia hidrológica del Río Paraguay. Presenta dinámicas cíclicas de inundación estacional y variabilidad en los niveles del río.",
+                    "latitude": -18.95,
+                    "longitude": -57.80,
+                    "main_crops": "Ganadería Bovina, Pesca, Arroz",
+                    "area_hectares": 120000,
                 }
             ]
 
@@ -44,10 +64,14 @@ class Command(BaseCommand):
             for r_data in regions_data:
                 region = Region.objects.create(
                     name=r_data["name"],
-                    description=r_data["description"]
+                    description=r_data["description"],
+                    latitude=r_data["latitude"],
+                    longitude=r_data["longitude"],
+                    main_crops=r_data["main_crops"],
+                    area_hectares=r_data["area_hectares"],
                 )
                 regions.append(region)
-                self.stdout.write(self.style.SUCCESS(f'Región registrada: {region.name}'))
+                self.stdout.write(self.style.SUCCESS(f'Región registrada: {region.name} ({region.latitude}, {region.longitude})'))
 
             # 3. Generación de predicciones mensuales para los siguientes 12 meses
             # Comenzamos desde Junio 2026 hasta Mayo 2027 (lead-time de 12 meses)

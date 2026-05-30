@@ -19,6 +19,26 @@ class Region(models.Model):
         verbose_name=_("Descripción"),
         help_text=_("Detalles sobre el relieve, clima predominante, principales cultivos u observaciones.")
     )
+    latitude = models.FloatField(
+        null=True, blank=True,
+        verbose_name=_("Latitud"),
+        help_text=_("Coordenada de latitud del epicentro de la región (ej. -17.33)")
+    )
+    longitude = models.FloatField(
+        null=True, blank=True,
+        verbose_name=_("Longitud"),
+        help_text=_("Coordenada de longitud del epicentro de la región (ej. -63.25)")
+    )
+    main_crops = models.CharField(
+        max_length=255, blank=True,
+        verbose_name=_("Cultivos Principales"),
+        help_text=_("Ej: Soya, Caña de Azúcar, Arroz")
+    )
+    area_hectares = models.IntegerField(
+        null=True, blank=True,
+        verbose_name=_("Superficie (ha)"),
+        help_text=_("Superficie estimada productiva en hectáreas")
+    )
     created_at = models.DateTimeField(auto_now_add=True, verbose_name=_("Fecha de Creación"))
     updated_at = models.DateTimeField(auto_now=True, verbose_name=_("Última Actualización"))
 

@@ -41,6 +41,10 @@ class RegionSchema(Schema):
     id: int
     name: str
     description: str
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    main_crops: Optional[str] = None
+    area_hectares: Optional[int] = None
 
 
 class ClimatePredictionSchema(Schema):

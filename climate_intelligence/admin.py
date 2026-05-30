@@ -200,16 +200,32 @@ class RegionAdmin(admin.ModelAdmin):
     """
     Panel administrativo para la gestión de Regiones Agrícolas.
     """
-    list_display = ('name', 'description_excerpt', 'prediction_count', 'created_at', 'updated_at')
-    search_fields = ('name', 'description')
+    list_display = ('name', 'main_crops', 'area_hectares', 'coordinates_display', 'prediction_count', 'updated_at')
+    search_fields = ('name', 'description', 'main_crops')
     readonly_fields = ('created_at', 'updated_at')
+    list_filter = ('main_crops',)
 
-    # Campo calculado para no saturar la vista de lista con textos largos
-    def description_excerpt(self, obj):
-        if obj.description and len(obj.description) > 60:
-            return f"{obj.description[:57]}..."
-        return obj.description or "-"
-    description_excerpt.short_description = "Descripción Corta"
+    fieldsets = (
+        ('Información General', {
+            'fields': ('name', 'description', 'main_crops', 'area_hectares')
+        }),
+        ('Ubicación Geoespacial (GIS)', {
+            'fields': ('latitude', 'longitude'),
+            'description': 'Coordenadas del epicentro agrícola de la región. Se usan para el mapa interactivo del frontend.'
+        }),
+        ('Metadatos', {
+            'fields': ('created_at', 'updated_at')
+        }),
+    )
+
+    def coordinates_display(self, obj):
+        if obj.latitude and obj.longitude:
+            return format_html(
+                '<span style="font-family: monospace; color: #1565c0;">{}, {}</span>',
+                f"{obj.latitude:.2f}", f"{obj.longitude:.2f}"
+            )
+        return "-"
+    coordinates_display.short_description = "Coordenadas"
 
     # Cuenta cuántas predicciones climáticas se han calculado para esta región
     def prediction_count(self, obj):
@@ -219,7 +235,7 @@ class RegionAdmin(admin.ModelAdmin):
             '#2e7d32' if count > 0 else '#c62828',
             count
         )
-    prediction_count.short_description = "Nº de Predicciones"
+    prediction_count.short_description = "Predicciones"
 
 
 # =============================================================================
