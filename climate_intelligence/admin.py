@@ -313,10 +313,11 @@ class ClimatePredictionAdmin(admin.ModelAdmin):
         if obj.confidence_score is None:
             return "-"
         percentage = obj.confidence_score * 100
+        percentage_str = f"{percentage:.1f}%"
         color_threshold = '#2e7d32' if percentage >= 75 else '#ef6c00' if percentage >= 50 else '#c62828'
         return format_html(
-            '<span style="color: {}; font-weight: 500;">{:.1f}%</span>',
-            color_threshold, percentage
+            '<span style="color: {}; font-weight: 500;">{}</span>',
+            color_threshold, percentage_str
         )
     confidence_percentage.short_description = "Confianza"
 
