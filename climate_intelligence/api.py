@@ -5,12 +5,19 @@ Construida con django-ninja, genera documentación OpenAPI/Swagger interactiva
 automáticamente en /api/docs.
 
 Endpoints disponibles:
+    --- Existentes ---
     - GET /api/health                               → Estado de salud del servicio
     - GET /api/regions                              → Listado de regiones
     - GET /api/predictions/{region_id}              → Predicciones por región
     - GET /api/predictions/{region_id}/timeline     → Línea temporal de predicciones
     - GET /api/regions/{region_id}/risk-assessment  → Evaluación de riesgo regional
     - GET /api/dashboard/summary                    → Resumen global del dashboard
+    --- Nuevos ---
+    - GET  /api/alerts                              → Listado de alertas activas del sistema
+    - GET  /api/alerts/{region_id}                  → Alertas de una región específica
+    - POST /api/alerts/generate/{prediction_id}     → Genera alerta Gemini para una predicción
+    - GET  /api/satellite/{region_id}               → Observaciones satelitales NDVI/NDWI
+    - GET  /api/climate-data/{region_id}            → Series de tiempo climáticas históricas
 """
 
 from datetime import date
@@ -22,13 +29,17 @@ from django.utils import timezone
 from ninja import NinjaAPI, Schema
 from ninja.errors import HttpError
 
-from .models import Region, ClimatePrediction
+from .models import Region, ClimatePrediction, ClimateAlert, SatelliteObservation, ClimateDataSource
 
 # Instancia principal de NinjaAPI — genera documentación Swagger en /api/docs
 api = NinjaAPI(
     title="AgriTech Climate Intelligence API",
-    version="1.0.0",
-    description="Backend API for climate anomaly predictions in Santa Cruz, Bolivia using Google Vertex AI.",
+    version="2.0.0",
+    description=(
+        "API del Sistema de Predicción de Eventos Climáticos Severos para Santa Cruz, Bolivia. "
+        "Integra modelos de Vertex AI, datos climáticos históricos (Open-Meteo) y "
+        "alertas agronómicas generadas con Google Gemini."
+    ),
 )
 
 
@@ -95,6 +106,8 @@ class DashboardSummaryResponse(Schema):
     """Resumen global del estado de la plataforma para el dashboard principal."""
     total_regions: int
     total_predictions: int
+    total_alerts: int
+    active_alerts_count: int
     anomaly_counts: List[AnomalyCountSchema]
     highest_severity_prediction: Optional[HighestSeverityPredictionSchema] = None
     average_confidence: Optional[float] = None
@@ -444,11 +457,353 @@ def get_dashboard_summary(request):
         else None
     )
 
+    # Conteo de alertas activas del sistema
+    total_alerts = ClimateAlert.objects.count()
+    active_alerts_count = ClimateAlert.objects.filter(
+        alert_level__in=[ClimateAlert.AlertLevel.HIGH, ClimateAlert.AlertLevel.EXTREME]
+    ).count()
+
     return {
         "total_regions": total_regions,
         "total_predictions": total_predictions,
+        "total_alerts": total_alerts,
+        "active_alerts_count": active_alerts_count,
         "anomaly_counts": anomaly_counts,
         "highest_severity_prediction": highest_severity_prediction,
         "average_confidence": average_confidence,
+        "generated_at": timezone.now().isoformat(),
+    }
+
+
+# =============================================================================
+# Nuevos Schemas — Alertas Climáticas
+# =============================================================================
+
+class AgronomicTipSchema(Schema):
+    """Un consejo agronómico individual dentro de una alerta."""
+    tip: str
+
+
+class ClimateAlertSchema(Schema):
+    """Esquema de serialización de una alerta climática con recomendaciones agronómicas."""
+    id: int
+    alert_level: str
+    title: str
+    message_short: str
+    message_long: str
+    agronomic_tips: list
+    generated_by: str
+    is_sent: bool
+    created_at: str
+    prediction_id: int
+    region_name: str
+    anomaly_type: str
+    target_date: date
+
+
+class GenerateAlertResponse(Schema):
+    """Respuesta al generar o regenerar una alerta climática."""
+    alert_id: int
+    title: str
+    alert_level: str
+    message_short: str
+    generated_by: str
+    is_new: bool
+
+
+# =============================================================================
+# Nuevos Schemas — Observaciones Satelitales
+# =============================================================================
+
+class SatelliteObservationSchema(Schema):
+    """Esquema de serialización de una observación satelital (NDVI/NDWI)."""
+    id: int
+    obs_date: date
+    ndvi: float
+    ndwi: float
+    cloud_cover_pct: Optional[float] = None
+    source: str
+
+
+class SatelliteDataResponse(Schema):
+    """Respuesta con observaciones satelitales históricas de una región."""
+    region: RegionSchema
+    observations: List[SatelliteObservationSchema]
+    total_observations: int
+    latest_ndvi: Optional[float] = None
+    latest_ndwi: Optional[float] = None
+    generated_at: str
+
+
+# =============================================================================
+# Nuevos Schemas — Datos Climáticos Históricos
+# =============================================================================
+
+class ClimateDataPointSchema(Schema):
+    """Punto de dato climático individual en la serie temporal."""
+    id: int
+    variable_name: str
+    date: date
+    value: float
+    unit: str
+    source_name: str
+
+
+class ClimateDataResponse(Schema):
+    """Respuesta con serie temporal de datos climáticos de una región."""
+    region: RegionSchema
+    data_points: List[ClimateDataPointSchema]
+    total_records: int
+    variables_available: List[str]
+    generated_at: str
+
+
+# =============================================================================
+# Nuevos Endpoints — Alertas Climáticas
+# =============================================================================
+
+@api.get(
+    "/alerts",
+    response=List[ClimateAlertSchema],
+    summary="Listar todas las alertas climáticas activas",
+    description="Retorna todas las alertas generadas por el sistema, ordenadas por nivel de criticidad.",
+    tags=["Alertas"],
+)
+def list_alerts(request, level: Optional[str] = None):
+    """
+    Lista todas las alertas climáticas del sistema.
+
+    Filtro opcional por nivel: LOW, MEDIUM, HIGH, EXTREME.
+    """
+    qs = ClimateAlert.objects.select_related("prediction__region").order_by(
+        "-created_at"
+    )
+    if level:
+        level_upper = level.upper()
+        valid_levels = [c.value for c in ClimateAlert.AlertLevel]
+        if level_upper not in valid_levels:
+            raise HttpError(400, f"Nivel inválido. Opciones: {', '.join(valid_levels)}")
+        qs = qs.filter(alert_level=level_upper)
+
+    results = []
+    for alert in qs:
+        results.append({
+            "id": alert.id,
+            "alert_level": alert.alert_level,
+            "title": alert.title,
+            "message_short": alert.message_short,
+            "message_long": alert.message_long,
+            "agronomic_tips": alert.agronomic_tips,
+            "generated_by": alert.generated_by,
+            "is_sent": alert.is_sent,
+            "created_at": alert.created_at.isoformat(),
+            "prediction_id": alert.prediction.id,
+            "region_name": alert.prediction.region.name,
+            "anomaly_type": alert.prediction.anomaly_type,
+            "target_date": alert.prediction.target_date,
+        })
+    return results
+
+
+@api.get(
+    "/alerts/{region_id}",
+    response=List[ClimateAlertSchema],
+    summary="Alertas climáticas de una región específica",
+    description="Retorna todas las alertas generadas para las predicciones de una región.",
+    tags=["Alertas"],
+)
+def get_region_alerts(request, region_id: int):
+    """Listado de alertas asociadas a todas las predicciones de una región."""
+    region = get_object_or_404(Region, id=region_id)
+    alerts = ClimateAlert.objects.filter(
+        prediction__region=region
+    ).select_related("prediction").order_by("-created_at")
+
+    results = []
+    for alert in alerts:
+        results.append({
+            "id": alert.id,
+            "alert_level": alert.alert_level,
+            "title": alert.title,
+            "message_short": alert.message_short,
+            "message_long": alert.message_long,
+            "agronomic_tips": alert.agronomic_tips,
+            "generated_by": alert.generated_by,
+            "is_sent": alert.is_sent,
+            "created_at": alert.created_at.isoformat(),
+            "prediction_id": alert.prediction.id,
+            "region_name": region.name,
+            "anomaly_type": alert.prediction.anomaly_type,
+            "target_date": alert.prediction.target_date,
+        })
+    return results
+
+
+@api.post(
+    "/alerts/generate/{prediction_id}",
+    response=GenerateAlertResponse,
+    summary="Genera alerta en lenguaje natural para una predicción",
+    description=(
+        "Invoca Google Gemini para generar una alerta agronómica personalizada "
+        "para la predicción indicada. Si la alerta ya existe, la regenera. "
+        "Si Gemini no está configurado, usa plantillas de fallback."
+    ),
+    tags=["Alertas"],
+)
+def generate_prediction_alert(request, prediction_id: int):
+    """
+    Genera o regenera una alerta climática para una predicción usando Gemini.
+    """
+    from .services.gemini_service import GeminiAlertService
+    from .services.climate_data import ClimateDataService
+
+    prediction = get_object_or_404(ClimatePrediction, id=prediction_id)
+    is_new = not hasattr(prediction, 'alert') or prediction.alert is None
+
+    # Obtener resumen climático reciente como contexto para Gemini
+    climate_service = ClimateDataService()
+    try:
+        climate_summary = climate_service.get_regional_climate_summary(
+            prediction.region.name, months_back=3
+        )
+    except Exception:
+        climate_summary = None
+
+    # Generar la alerta
+    gemini_service = GeminiAlertService()
+    alert_data = gemini_service.generate_alert(prediction, climate_summary)
+
+    # Guardar o actualizar en base de datos
+    try:
+        existing_alert = prediction.alert
+        existing_alert.alert_level = alert_data["alert_level"]
+        existing_alert.title = alert_data["title"]
+        existing_alert.message_short = alert_data["message_short"]
+        existing_alert.message_long = alert_data["message_long"]
+        existing_alert.agronomic_tips = alert_data["agronomic_tips"]
+        existing_alert.generated_by = alert_data["generated_by"]
+        existing_alert.save()
+        saved_alert = existing_alert
+        is_new = False
+    except ClimateAlert.DoesNotExist:
+        from .models import ClimateAlert as ClimateAlertModel
+        saved_alert = ClimateAlertModel.objects.create(
+            prediction=prediction,
+            **{k: v for k, v in alert_data.items()}
+        )
+        is_new = True
+
+    return {
+        "alert_id": saved_alert.id,
+        "title": saved_alert.title,
+        "alert_level": saved_alert.alert_level,
+        "message_short": saved_alert.message_short,
+        "generated_by": saved_alert.generated_by,
+        "is_new": is_new,
+    }
+
+
+# =============================================================================
+# Nuevos Endpoints — Observaciones Satelitales
+# =============================================================================
+
+@api.get(
+    "/satellite/{region_id}",
+    response=SatelliteDataResponse,
+    summary="Observaciones satelitales NDVI/NDWI de una región",
+    description=(
+        "Retorna el histórico de observaciones satelitales (NDVI y NDWI) para una región. "
+        "NDVI indica salud de vegetación; NDWI indica presencia de agua en superficie."
+    ),
+    tags=["Monitoreo Satelital"],
+)
+def get_satellite_observations(request, region_id: int):
+    """
+    Histórico de índices satelitales NDVI y NDWI para una región.
+
+    útil para detectar erósion de vegetación por sequía o anegamiento
+    por inundación con anticipación a los eventos climáticos.
+    """
+    region = get_object_or_404(Region, id=region_id)
+    observations = SatelliteObservation.objects.filter(
+        region=region
+    ).order_by("-obs_date")[:24]  # Últimas 24 observaciones
+
+    obs_list = []
+    latest_ndvi = None
+    latest_ndwi = None
+
+    for i, obs in enumerate(observations):
+        if i == 0:
+            latest_ndvi = obs.ndvi
+            latest_ndwi = obs.ndwi
+        obs_list.append({
+            "id": obs.id,
+            "obs_date": obs.obs_date,
+            "ndvi": obs.ndvi,
+            "ndwi": obs.ndwi,
+            "cloud_cover_pct": obs.cloud_cover_pct,
+            "source": obs.source,
+        })
+
+    return {
+        "region": region,
+        "observations": obs_list,
+        "total_observations": len(obs_list),
+        "latest_ndvi": latest_ndvi,
+        "latest_ndwi": latest_ndwi,
+        "generated_at": timezone.now().isoformat(),
+    }
+
+
+# =============================================================================
+# Nuevos Endpoints — Datos Climáticos Históricos
+# =============================================================================
+
+@api.get(
+    "/climate-data/{region_id}",
+    response=ClimateDataResponse,
+    summary="Series de tiempo climáticas históricas de una región",
+    description=(
+        "Retorna los datos climáticos históricos ingestados desde Open-Meteo, NASA POWER "
+        "u otras fuentes. Filtrable por variable (ej. precipitation_sum, temperature_2m_max)."
+    ),
+    tags=["Datos Climáticos"],
+)
+def get_climate_data(request, region_id: int, variable: Optional[str] = None, limit: int = 365):
+    """
+    Serie temporal de datos climáticos históricos para una región.
+
+    Args:
+        region_id: ID de la región
+        variable: Nombre de la variable a filtrar (ej. precipitation_sum)
+        limit: Máximo de registros a retornar (por defecto 365)
+    """
+    region = get_object_or_404(Region, id=region_id)
+    qs = ClimateDataSource.objects.filter(region=region).order_by("-date")
+
+    if variable:
+        qs = qs.filter(variable_name=variable)
+
+    qs = qs[:limit]
+
+    data_points = []
+    variables_seen = set()
+    for record in qs:
+        variables_seen.add(record.variable_name)
+        data_points.append({
+            "id": record.id,
+            "variable_name": record.variable_name,
+            "date": record.date,
+            "value": record.value,
+            "unit": record.unit,
+            "source_name": record.source_name,
+        })
+
+    return {
+        "region": region,
+        "data_points": data_points,
+        "total_records": len(data_points),
+        "variables_available": sorted(list(variables_seen)),
         "generated_at": timezone.now().isoformat(),
     }

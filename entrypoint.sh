@@ -47,15 +47,22 @@ echo "=== [3/3] Aplicando Migraciones de Base de Datos ==="
 # Aplica las migraciones estructurales a la base de datos de manera automatizada
 python manage.py migrate --noinput
 
-# Iniciar el Servidor de Producción (Gunicorn + Uvicorn workers)
-# Google Cloud Run inyecta dinámicamente la variable de entorno $PORT (por defecto suele ser 8080)
-PORT="${PORT:-8080}"
-echo "🚀 Iniciando Servidor Web con Gunicorn en 0.0.0.0:$PORT ..."
-echo "🔧 Configuración: workers=4, class=uvicorn.workers.UvicornWorker"
+# Si se pasan argumentos al script (como python manage.py runserver en desarrollo local), los ejecutamos.
+# De lo contrario, iniciamos el servidor de producción Gunicorn (como en Google Cloud Run).
+if [ $# -gt 0 ]; then
+    echo "🔧 Ejecutando comando de desarrollo: $@"
+    exec "$@"
+else
+    # Iniciar el Servidor de Producción (Gunicorn + Uvicorn workers)
+    # Google Cloud Run inyecta dinámicamente la variable de entorno $PORT (por defecto suele ser 8080)
+    PORT="${PORT:-8080}"
+    echo "🚀 Iniciando Servidor Web con Gunicorn en 0.0.0.0:$PORT ..."
+    echo "🔧 Configuración: workers=4, class=uvicorn.workers.UvicornWorker"
 
-exec gunicorn config.asgi:application \
-    --bind "0.0.0.0:$PORT" \
-    --workers 4 \
-    --worker-class uvicorn.workers.UvicornWorker \
-    --threads 4 \
-    --timeout 0
+    exec gunicorn config.asgi:application \
+        --bind "0.0.0.0:$PORT" \
+        --workers 4 \
+        --worker-class uvicorn.workers.UvicornWorker \
+        --threads 4 \
+        --timeout 0
+fi

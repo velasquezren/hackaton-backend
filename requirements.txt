@@ -19,5 +19,14 @@ whitenoise>=6.7.0,<7.0.0
 django-environ>=0.11.2,<0.12.0
 django-cors-headers>=4.3.1,<5.0.0
 
-# AI Integration
+# AI Integration — Google Cloud Vertex AI
 google-cloud-aiplatform>=1.53.0,<2.0.0
+
+# AI Integration — Google Gemini LLM (alertas en lenguaje natural)
+google-generativeai>=0.7.0,<1.0.0
+
+# HTTP Client para APIs climáticas externas (Open-Meteo, NASA POWER)
+httpx>=0.27.0,<0.28.0
+
+# Utilidades de fechas
+python-dateutil>=2.9.0,<3.0.0

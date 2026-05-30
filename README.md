@@ -1,265 +1,181 @@
-# 🌾 AgriTech Backend - Platforma de Inteligencia Climática para Santa Cruz, Bolivia
+# 🌾 AgriTech - Plataforma de Inteligencia Climática (Backend)
 
-Este es el repositorio base y la infraestructura fundacional para la plataforma AgriTech de predicción climática severa (inundaciones y sequías) con **12 meses de anticipación** en el Departamento de Santa Cruz, Bolivia.
+Este repositorio contiene el backend de alto rendimiento para **AgriTech**, una plataforma de inteligencia climática diseñada para predecir anomalías climáticas severas (como sequías e inundaciones) con **12 meses de anticipación** en las 5 regiones agrícolas clave del **Departamento de Santa Cruz, Bolivia**.
 
-El sistema está diseñado bajo una arquitectura limpia, de alta escalabilidad y desacoplada, utilizando **Django** como framework robusto de persistencia y panel administrativo, junto a **Django Ninja** para servir endpoints RESTful asíncronos y ultrarrápidos listos para ser consumidos por el frontend independiente.
-
----
-
-## 🚀 Arquitectura y Pila Tecnológica
-
-* **Core Backend:** Python 3.11 + Django 5.0
-* **API asíncrona:** [Django Ninja](https://django-ninja.rest-framework.com/) (esquemas Pydantic v2, serialización de alta velocidad, documentación interactiva Swagger integrada).
-* **Base de Datos:** PostgreSQL (preparado para **Google Cloud SQL**).
-* **Contenedores:** Docker + Docker Compose para consistencia absoluta entre desarrollo y producción.
-* **Servidor ASGI de Producción:** **Gunicorn** administrando procesos trabajadores asíncronos de **Uvicorn** (`UvicornWorker`).
-* **Optimización de Estáticos:** **WhiteNoise** con compresión Gzip y Brotli, permitiendo servir el Django Admin de forma nativa sin Nginx.
-* **Integración de IA:** Preparado para consumir el SDK de **Google Vertex AI**.
+La solución está construida sobre **Django 5.0** y **Django-Ninja**, e integra modelos de Machine Learning avanzados consumidos desde **Google Vertex AI** (o mediante un simulador local realista). Está dockerizada y lista para producción en entornos Serverless como **Google Cloud Run**.
 
 ---
 
-## 🛠️ Estructura del Proyecto
+## 🏗️ Arquitectura General del Sistema
+
+El backend sigue un diseño modular y desacoplado, combinando la robustez de Django con la velocidad de ejecución asíncrona de Django-Ninja (inspirado en FastAPI) y la potencia analítica de Google Cloud.
+
+```mermaid
+graph TD
+    subgraph Frontend / Clientes
+        A[Dashboard Web / Mobile] -->|Consultas HTTP REST| B[Django Ninja API /api/]
+        A -->|Administración| C[Panel Django Admin /admin/]
+    end
+
+    subgraph Backend Core (Django)
+        B -->|Controladores REST| D[climate_intelligence/api.py]
+        C -->|Dashboard & Badges| E[climate_intelligence/admin.py]
+        
+        D -->|Consultas ORM| F[(PostgreSQL / SQLite)]
+        E -->|Consultas ORM| F
+        
+        G[VertexAIService] -->|Predicción Real/Mock| D
+        H[CLI Commands: seed / export] -->|Operaciones Masivas| F
+    end
+
+    subgraph Nube & IA (Google Cloud)
+        G -->|SDK google-cloud-aiplatform| I[Google Vertex AI Endpoints]
+    end
+    
+    style A fill:#f9f,stroke:#333,stroke-width:2px
+    style I fill:#4285F4,stroke:#333,stroke-width:2px
+    style F fill:#336791,stroke:#333,stroke-width:2px
+    style G fill:#34A853,stroke:#333,stroke-width:2px
+```
+
+---
+
+## 📂 Estructura del Proyecto
+
+El código está estructurado de la siguiente manera:
 
 ```text
-/home/httpreen/hackaton/
-├── config/                      # Ajustes principales del proyecto Django
-│   ├── settings.py              # Ajustes de producción, WhiteNoise y CORS
-│   ├── urls.py                  # Enrutador principal y montaje de Ninja API
-│   ├── asgi.py                  # Entrypoint asíncrono ASGI
-│   └── wsgi.py                  # Entrypoint síncrono WSGI
-├── climate_intelligence/        # Aplicación de lógica de negocio principal
-│   ├── migrations/              # Migraciones de base de datos
-│   ├── admin.py                 # Panel de administración premium personalizado
-│   ├── api.py                   # Esquemas y endpoints de Django Ninja
-│   └── models.py                # Definición de modelos (Region, ClimatePrediction)
-├── Dockerfile                   # Dockerfile multi-stage optimizado para GCP
-├── docker-compose.yml           # Orquestación de desarrollo local con PostgreSQL
-├── entrypoint.sh                # Script de arranque (migración, colecta y ejecución de Gunicorn)
-├── requirements.txt             # Librerías y dependencias necesarias con versiones estables
-├── .env                         # Variables de entorno activas locales
-└── README.md                    # Esta guía completa
+hackaton-backend/
+│
+├── config/                         # Configuración central de Django
+│   ├── settings.py                 # Variables, bases de datos, middlewares (WhiteNoise, CORS)
+│   ├── urls.py                     # Enrutador principal (muta /admin y /api)
+│   └── asgi.py & wsgi.py           # Puntos de entrada para servidores asíncronos y síncronos
+│
+├── climate_intelligence/           # Aplicación principal de la plataforma
+│   ├── models.py                   # Modelos de base de datos (Regiones y Predicciones)
+│   ├── api.py                      # Endpoints REST estructurados con Django-Ninja (Pydantic schemas)
+│   ├── admin.py                    # Extensión avanzada del panel Django Admin + Dashboard
+│   ├── services/
+│   │   └── vertex_ai.py            # Servicio de integración con Google Vertex AI (Real / Mock)
+│   ├── management/
+│   │   └── commands/
+│   │       ├── seed_climate_data.py # Inicializador de base de datos con datos geográficos reales
+│   │       └── export_predictions.py # CLI para exportar reportes filtrados a CSV
+│   └── templates/
+│       └── admin/
+│           └── climate_dashboard.html # Plantilla HTML del dashboard analítico del Administrador
+│
+├── Dockerfile                      # Empaquetado optimizado para Google Cloud Run (Slim, sin privilegios)
+├── docker-compose.yml              # Orquestador local multi-contenedor (Django + PostgreSQL)
+├── entrypoint.sh                   # Script de arranque (espera a DB, migra, recolecta estáticos, gunicorn)
+├── requirements.txt                # Dependencias del sistema
+└── .env.example                    # Plantilla de configuración de variables de entorno
 ```
 
 ---
 
-## 💻 Desarrollo Local (Paso a Paso con Docker Compose)
+## 🔍 Análisis Detallado de Componentes
 
-El entorno local viene 100% configurado para levantarse en segundos mediante contenedores.
+### 1. Modelos de Datos (`climate_intelligence/models.py`)
+Define la estructura persistente del negocio utilizando el ORM de Django:
+*   **`Region`**: Representa una región geográfica o agrícola en Santa Cruz. Contiene campos como `name` (ej. *Norte Integrado*, *Chiquitania*) y `description`.
+*   **`ClimatePrediction`**: Almacena las predicciones climáticas severas.
+    *   **Tipo de anomalía (`anomaly_type`)**: Un campo `TextChoices` con opciones `SEQUIA` (Sequía), `INUNDACION` (Inundación) o `NORMAL` (Sin anomalías).
+    *   **Fechas**: `prediction_date` (cuándo se ejecutó el modelo) y `target_date` (mes objetivo futuro, típicamente a 12 meses).
+    *   **Métricas**: `severity_level` (escala 1 a 5 con validadores) y `confidence_score` (probabilidad/certeza de 0.0 a 1.0).
+    *   **Payload crudo de IA (`vertex_ai_output`)**: Un campo `JSONField` que almacena la respuesta completa devuelta por Vertex AI para auditorías (ej. importancia de características, versión del modelo, etc.).
+    *   *Restricción*: Evita la duplicación mediante una restricción única `unique_together = ('region', 'target_date', 'prediction_date')`.
 
-### 1. Prerrequisitos
-* Tener instalado **Docker** y **Docker Compose** en tu máquina.
+### 2. Integración con Google Vertex AI (`climate_intelligence/services/vertex_ai.py`)
+Módulo encargado de consumir los modelos predictivos de Machine Learning. Cuenta con dos modos de operación inteligentes:
+*   **Modo Producción (`_predict_real`)**: 
+    1. Importa dinámicamente el SDK oficial (`google.cloud.aiplatform`).
+    2. Inicializa la conexión con el proyecto GCP (`GCP_PROJECT_ID`) en la ubicación configurada (`GCP_LOCATION`).
+    3. Construye el payload de entrada con variables como anomalías de temperatura, déficit de precipitación, humedad del suelo, etc.
+    4. Consulta el endpoint desplegado (`VERTEX_AI_ENDPOINT_ID`) de forma síncrona y retorna la predicción.
+*   **Modo Desarrollo (`mock_predict`)**: Se activa automáticamente si las variables de entorno de producción no están configuradas. Genera predicciones climáticas realistas mediante **perfiles de probabilidad ponderados** basados en el comportamiento real de cada región:
+    *   *Chaco Cruceño*: Propensión muy alta a Sequías (50%).
+    *   *Pantanal*: Propensión alta a Inundaciones (50%).
+    *   *Norte Integrado*: Clima balanceado (35% Inundación, 30% Sequía).
+    *   Calcula de forma automática la importancia aleatoria de variables y metadatos simulados de entrenamiento.
 
-### 2. Levantar la Aplicación
-Ejecuta el siguiente comando en la raíz del proyecto:
-```bash
-docker compose up --build
-```
-Este comando realizará las siguientes tareas automáticamente:
-1. Descargará y levantará un contenedor de **PostgreSQL 15-alpine** con persistencia de volumen (`postgres_data`).
-2. Compilará el contenedor de Django, detectará la disponibilidad de la base de datos de forma segura, recolectará todos los archivos estáticos en `/app/staticfiles` para WhiteNoise y aplicará todas las migraciones necesarias.
-3. Iniciará el servidor de desarrollo Django con **Hot Reload** en el puerto `8000`.
+### 3. API REST de Alta Performance (`climate_intelligence/api.py`)
+Construida con **Django-Ninja**, la cual utiliza validación de tipos nativa mediante **Pydantic** y genera documentación Swagger/OpenAPI interactiva instantánea en `/api/docs`.
 
-### 3. Acceso a la Plataforma
-* **API Endpoints:** [http://localhost:8000/api/](http://localhost:8000/api/)
-* **Documentación Interactiva (Swagger/OpenAPI):** [http://localhost:8000/api/docs](http://localhost:8000/api/docs)
-* **Panel de Administración (Django Admin):** [http://localhost:8000/admin/](http://localhost:8000/admin/)
+| Método | Endpoint | Descripción | Funcionalidad Clave |
+| :--- | :--- | :--- | :--- |
+| **GET** | `/api/health` | Chequeo de estado | Comprobación de salud para balanceadores de carga. |
+| **GET** | `/api/regions` | Listar Regiones | Retorna la lista completa de las 5 regiones agrícolas. |
+| **GET** | `/api/predictions/{id}` | Predicciones de Región | Retorna las predicciones vigentes de una región específica. |
+| **GET** | `/api/predictions/{id}/timeline` | Gráficos de Línea Temporal | Retorna las predicciones ordenadas cronológicamente para charts. |
+| **GET** | `/api/dashboard/summary` | Resumen Global | Consolida conteos de anomalías, promedios de confianza y la predicción más severa actual. |
+| **GET** | `/api/regions/{id}/risk-assessment` | Evaluación de Riesgo | **Algoritmo Compuesto**: Calcula un puntaje de riesgo de `0.0` a `10.0` basado en severidad promedio de anomalías, la tasa de frecuencia y la confianza del modelo. Determina niveles textuales (*CRÍTICO, ALTO, MODERADO, BAJO, MÍNIMO*). |
 
-### 4. Crear Superusuario (para acceder al Admin)
-En una nueva terminal, ejecuta:
-```bash
-docker compose exec web python manage.py createsuperuser
-```
-Sigue los pasos interactivos para asignar tu correo y contraseña.
+### 4. Consola de Administración y Visualización (`climate_intelligence/admin.py` & templates)
+El Panel de Administración tradicional de Django fue repotenciado para actuar como un completo centro de control:
+*   **Dashboard Personalizado (`/admin/climate-dashboard/`)**: Inyecta una vista HTML (`climate_dashboard.html`) estilizada dentro del panel de administración que muestra KPIs agregados (Regiones, Predicciones, Severidad Promedio, Confianza) y un desglose interactivo de anomalías con badges visuales.
+*   **Badges Dinámicos en Listados**:
+    *   **Anomalía**: Badges coloreados según el tipo (Naranja para Sequía, Azul para Inundación, Verde para Normal).
+    *   **Severidad**: Una barra de progreso horizontal que va de verde (leve) a rojo (extremo) según el nivel 1-5.
+    *   **Confianza**: Formateado en porcentaje (ej. `85.4%`) con alertas cromáticas según el umbral.
+*   **Acción Masiva de Exportación**: Permite seleccionar múltiples predicciones en el listado y exportarlas a un archivo CSV formateado de forma nativa para Excel en español (codificación `utf-8-sig` con BOM).
 
----
-
-## 🗺️ Cargar Datos Iniciales de Prueba
-
-Para probar rápidamente el endpoint `/api/predictions/{region_id}`, puedes abrir una consola interactiva de Django y crear registros iniciales:
-
-```bash
-docker compose exec web python manage.py shell
-```
-
-Dentro del shell interactivo de Python, copia y pega lo siguiente:
-
-```python
-from climate_intelligence.models import Region, ClimatePrediction
-from datetime import date, timedelta
-
-# 1. Crear Regiones Productivas de Santa Cruz
-region_norte = Region.objects.create(
-    name="Norte Integrado",
-    description="Principal zona productora de soya, maíz y arroz en Santa Cruz. Alta sensibilidad a inundaciones."
-)
-region_valles = Region.objects.create(
-    name="Valles Cruceños",
-    description="Zona hortícola y frutícola de altura. Altamente susceptible a sequías prolongadas y heladas."
-)
-
-# 2. Crear Predicciones a 12 meses
-# Simulación de anomalía severa (Inundación en el Norte Integrado en 12 meses)
-ClimatePrediction.objects.create(
-    region=region_norte,
-    prediction_date=date.today(),
-    target_date=date.today() + timedelta(days=365),
-    anomaly_type=ClimatePrediction.AnomalyType.INUNDACION,
-    severity_level=4,
-    confidence_score=0.88,
-    vertex_ai_output={
-        "model_id": "lstm_climate_predictor_v3_bolivia",
-        "features_used": ["anomaly_sea_surface_temp", "la_nina_index", "soil_saturation"],
-        "predicted_precipitation_anomaly_pct": +25.4,
-        "validation_metric": "MSE: 0.04"
-    }
-)
-
-# Simulación de sequía en los Valles Cruceños
-ClimatePrediction.objects.create(
-    region=region_valles,
-    prediction_date=date.today(),
-    target_date=date.today() + timedelta(days=365),
-    anomaly_type=ClimatePrediction.AnomalyType.SEQUIA,
-    severity_level=5,
-    confidence_score=0.92,
-    vertex_ai_output={
-        "model_id": "xgboost_climate_drought_v1",
-        "features_used": ["spi_index", "ndvi_deficit", "temperature_drift"],
-        "predicted_precipitation_anomaly_pct": -42.1,
-        "validation_metric": "AUC: 0.94"
-    }
-)
-
-print("¡Datos de prueba cargados con éxito!")
-```
-
-Luego, puedes navegar a [http://localhost:8000/api/predictions/1](http://localhost:8000/api/predictions/1) o usar la interfaz Swagger para consumir los resultados estructurados.
+### 5. Herramientas CLI (`climate_intelligence/management/commands/`)
+*   **`seed_climate_data`**: Inicializa la base de datos limpiándola previamente. Inserta las 5 regiones reales con descripciones productivas y genera automáticamente **60 predicciones simuladas** (12 meses por región) siguiendo las reglas lógicas del clima cruceño estacional (ej. inundaciones en el Norte Integrado durante el verano austral).
+*   **`export_predictions`**: Exporta los registros a un archivo CSV con filtros CLI sumamente flexibles:
+    ```bash
+    python manage.py export_predictions --region "Valles Cruceños" --anomaly-type SEQUIA --min-severity 3 --output valles_sequias_criticas.csv
+    ```
 
 ---
 
-## ☁️ Despliegue en Google Cloud Run
+## 🐳 Infraestructura, Despliegue y DevOps
 
-**Google Cloud Run** es el entorno Serverless perfecto para este backend asíncrono gracias a su capacidad de escalar a cero cuando no se usa, lo que minimiza costos durante el Hackathon.
+### Desarrollo Local (Docker Compose)
+El backend cuenta con una configuración dockerizada de dos capas (Aplicación + Base de datos PostgreSQL):
+*   La base de datos expone el puerto `5432` y persiste los archivos en un volumen local (`postgres_data`).
+*   El contenedor `web` sincroniza en caliente el código del host (`hot-reload`) y arranca en el puerto `8000`.
 
-### Pasos de Despliegue de Producción
-
-#### 1. Iniciar sesión y seleccionar tu proyecto
-```bash
-gcloud auth login
-gcloud config set project NOMBRE_DE_TU_PROYECTO_GCP
-```
-
-#### 2. Crear una Instancia en Google Cloud SQL (PostgreSQL)
-Recomendamos crear una base de datos PostgreSQL administrada:
-```bash
-gcloud sql instances create agritech-db-instance \
-    --database-version=POSTGRES_15 \
-    --tier=db-f1-micro \
-    --region=us-central1
-```
-
-Crea la base de datos interna y un usuario seguro:
-```bash
-gcloud sql databases create agritech --instance=agritech-db-instance
-gcloud sql users create django-user --instance=agritech-db-instance --password=CAMBIA_ESTA_CONTRASEÑA
-```
-
-#### 3. Proteger Credenciales usando Google Cloud Secret Manager
-Evita dejar claves expuestas. Crea un secreto para la cadena de conexión de base de datos (`DATABASE_URL`) y la clave secreta de Django (`SECRET_KEY`):
-
-```bash
-# Secreto de Django
-echo -n "una-clave-secreta-muy-fuerte-para-produccion-123456" | \
-gcloud secrets create DJANGO_SECRET_KEY --data-file=-
-
-# Cadena de conexión PostgreSQL (Usa formato UNIX Socket para conectarte por Cloud SQL Auth Proxy de forma transparente)
-# Formato: postgres://usuario:password@/nombre_base_datos?host=/cloudsql/gcp-project:region:instance-name
-echo -n "postgres://django-user:CAMBIA_ESTA_CONTRASEÑA@/agritech?host=/cloudsql/NOMBRE_DE_TU_PROYECTO_GCP:us-central1:agritech-db-instance" | \
-gcloud secrets create PRODUCTION_DATABASE_URL --data-file=-
-```
-
-#### 4. Construir y Desplegar el Contenedor
-Utiliza **Google Cloud Build** para compilar el Dockerfile optimizado y desplegarlo directamente a **Cloud Run**:
-
-```bash
-# 1. Compila la imagen en la nube usando Cloud Build
-gcloud builds submit --tag gcr.io/NOMBRE_DE_TU_PROYECTO_GCP/agritech-backend
-
-# 2. Despliega en Cloud Run inyectando los secretos y conectando a Cloud SQL
-gcloud run deploy agritech-backend-service \
-    --image gcr.io/NOMBRE_DE_TU_PROYECTO_GCP/agritech-backend \
-    --region us-central1 \
-    --platform managed \
-    --add-cloudsql-instances NOMBRE_DE_TU_PROYECTO_GCP:us-central1:agritech-db-instance \
-    --set-secrets="SECRET_KEY=DJANGO_SECRET_KEY:latest,DATABASE_URL=PRODUCTION_DATABASE_URL:latest" \
-    --set-env-vars="DEBUG=False,ALLOWED_HOSTS=*,CORS_ALLOW_ALL_ORIGINS=True" \
-    --allow-unauthenticated
-```
+### Despliegue de Producción (Google Cloud Run)
+La configuración del `Dockerfile` y `entrypoint.sh` está optimizada para la infraestructura serverless de Google:
+1.  **Seguridad**: Crea y ejecuta la app bajo un usuario de sistema no privilegiado (`appuser:8888`).
+2.  **Eficiencia de Estáticos**: Utiliza **WhiteNoise** con almacenamiento comprimido (Brotli/Gzip) para servir CSS/JS sin requerir un Nginx separado.
+3.  **Resiliencia de Conexión**: `entrypoint.sh` contiene un script embebido en Python que realiza un bucle de comprobación activa (*polling*) para verificar si la base de datos PostgreSQL remota (o Cloud SQL) está completamente en línea antes de aplicar migraciones estructurales automáticas (`python manage.py migrate`).
+4.  **Servidor de Alto Rendimiento**: Inicia el servidor mediante **Gunicorn** administrando múltiples hilos de ejecución **Uvicorn** (`uvicorn.workers.UvicornWorker`), ideal para el procesamiento concurrente asíncrono que requiere Django-Ninja.
 
 ---
 
-## 🧠 Integración con Google Vertex AI
+## 🛠️ Cómo Iniciar y Configurar el Proyecto
 
-El backend de Django Ninja actúa como el **orquestador**. En lugar de invocar modelos pesados dentro del contenedor de Django, delegas el cálculo a **Vertex AI** utilizando su SDK oficial de Python (incluido en `requirements.txt`).
+### 1. Clonar y Configurar Variables de Entorno
+Crea un archivo `.env` en la raíz del backend basado en `.env.example`:
+```bash
+cp .env.example .env
+```
+*Asegúrate de ajustar los parámetros de Google Vertex AI si vas a conectar la aplicación a un endpoint real.*
 
-### Flujo Operativo Recomendado:
-1. **Ejecución Batch (Recomendado):** Un script recurrente o Cloud Run Job consulta a Vertex AI una vez al mes, procesa las predicciones a 12 meses para todas las parcelas y almacena los resultados estructurados en la base de datos PostgreSQL.
-2. **Inferencia en Tiempo Real:** El endpoint realiza una consulta al SDK de Vertex AI en caliente y formatea la respuesta en milisegundos.
+### 2. Iniciar con Docker Compose
+Para descargar las imágenes, compilar y ejecutar los contenedores:
+```bash
+docker-compose up --build
+```
+Este comando levantará la base de datos PostgreSQL, esperará su inicialización, aplicará las migraciones y expondrá la API en `http://localhost:8000`.
 
-Ejemplo de código para importar en un servicio predictivo (`services.py`):
-```python
-import os
-from google.cloud import aiplatform
-
-def predecir_evento_climatico(datos_meteorologicos: list):
-    """
-    Invoca un modelo predictivo desplegado en un Endpoint de Google Vertex AI.
-    """
-    # 1. Inicializa el SDK leyendo credenciales implícitas de la cuenta de servicio de Cloud Run
-    aiplatform.init(
-        project=os.environ.get("GCP_PROJECT_ID"),
-        location=os.environ.get("GCP_LOCATION", "us-central1")
-    )
-    
-    # 2. Obtiene el Endpoint configurado
-    endpoint = aiplatform.Endpoint(
-        endpoint_name=os.environ.get("VERTEX_AI_ENDPOINT_ID")
-    )
-    
-    # 3. Envía los datos para inferencia (ej. temperatura del mar, humedad del suelo local, viento)
-    prediccion = endpoint.predict(instances=datos_meteorologicos)
-    
-    return prediccion.predictions
+### 3. Poblar la Base de Datos (Seeder)
+Abre otra consola y ejecuta el seeder para poblar las regiones y predicciones simuladas a 12 meses:
+```bash
+docker-compose exec web python manage.py seed_climate_data
 ```
 
-> [!NOTE]
-> Al desplegar en Google Cloud Run, no necesitas archivos JSON de llaves de cuentas de servicio si asignas a la instancia una cuenta de servicio de IAM que tenga el rol de **Vertex AI User** (`roles/aiplatform.user`). Esto se conoce como identidades seguras sin contraseñas (GCP IAM).
+### 4. Acceder a las Interfaces
+*   **Documentación Interactiva de la API**: [http://localhost:8000/api/docs](http://localhost:8000/api/docs)
+*   **Panel de Administración de Django**: [http://localhost:8000/admin/](http://localhost:8000/admin/)
+*   **Dashboard Climático del Admin**: [http://localhost:8000/admin/climate-dashboard/](http://localhost:8000/admin/climate-dashboard/)
 
 ---
 
-## 🗺️ Extensión Geoespacial (GeoDjango + PostGIS)
-
-Si quieres destacar en el Hackathon con consultas de mapas reales (ej. *"¿Qué parcelas de soya en el municipio de Yapacaní se inundarán con severidad > 4?"*), te sugerimos actualizar la base de datos a **PostGIS** y usar **GeoDjango**.
-
-### Cómo actualizar este proyecto a PostGIS:
-1. **En `requirements.txt`:** Se mantiene igual (`psycopg2-binary` soporta PostGIS perfectamente).
-2. **En tu Base de Datos PostgreSQL:** Habilita la extensión ejecutando `CREATE EXTENSION postgis;` (Cloud SQL lo soporta de forma nativa).
-3. **En `docker-compose.yml`:** Cambia la imagen del contenedor de base de datos a `postgis/postgis:15-3.3-alpine`.
-4. **En el contenedor web (`Dockerfile`):** Instala las librerías geoespaciales requeridas por GeoDjango (`gdal-bin`, `libgdal-dev`, `binutils`, `libproj-dev`). Añádelas en el bloque de `apt-get install`.
-5. **En `settings.py`:** Cambia el motor de base de datos a:
-   ```python
-   DATABASES = {
-       'default': env.db('DATABASE_URL', default='postgis://...')
-   }
-   # Asegúrate de agregar django.contrib.gis en INSTALLED_APPS
-   ```
-6. **En `models.py`:** Utiliza `from django.contrib.gis.db import models` y añade campos geográficos:
-   ```python
-   # Ejemplo de campo geométrico de polígono para la región
-   geom = models.PolygonField(srid=4326, verbose_name="Límites Geográficos")
-   ```
-
----
-
-## 🧑‍💻 Autores
-Estructura fundacional generada con pasión por **Antigravity AI (Google DeepMind Team)** para el Hackathon AgriTech 2026. ¡Mucho éxito en el desarrollo de soluciones sostenibles para Bolivia! 🇧🇴🌾
+> [!TIP]
+> **Crear Superusuario Administrativo**  
+> Para iniciar sesión en el panel `/admin`, puedes crear un superusuario interactivo ejecutando:  
+> `docker-compose exec web python manage.py createsuperuser`
