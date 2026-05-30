@@ -278,7 +278,6 @@ class ClimatePredictionAdmin(admin.ModelAdmin):
             'fields': ('anomaly_type', 'severity_level', 'confidence_score')
         }),
         ('Resultados de IA (Google Vertex AI)', {
-            'classes': ('collapse',),  # Sección colapsable
             'fields': ('pretty_vertex_ai_output',),
             'description': 'Muestra el payload JSON en crudo devuelto por la plataforma Vertex AI para auditorías.'
         }),
