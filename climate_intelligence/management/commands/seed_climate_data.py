@@ -58,9 +58,13 @@ class Command(BaseCommand):
 
             # Definición de anomalías lógicas por mes y región
             for i in range(12):
-                target_month_date = start_date + timedelta(days=i*30.5)
-                # Forzar el día de la fecha objetivo al primero del mes para mantener orden
-                target_date = date(target_month_date.year, target_month_date.month, 1)
+                # Incremento de mes matemático limpio para evitar redondeos raros de días
+                month = start_date.month + i
+                year = start_date.year
+                if month > 12:
+                    year += (month - 1) // 12
+                    month = (month - 1) % 12 + 1
+                target_date = date(year, month, 1)
 
                 for region in regions:
                     anomaly_type = ClimatePrediction.AnomalyType.NORMAL
