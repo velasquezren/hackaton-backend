@@ -1,3 +1,4 @@
+import io
 import logging
 from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -10,6 +11,7 @@ from clima import obtener_pronostico
 from reglas import (evaluar_siembra, evaluar_fumigacion,
                     evaluar_herbicida_secado, evaluar_cosecha, evaluar_riesgo_general)
 from llm import generar_respuesta
+from audio import transcribir_audio, texto_a_voz_ogg
 
 logging.basicConfig(level=logging.INFO)
 
@@ -102,7 +104,112 @@ async def recibir_cultivo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     return ConversationHandler.END
 
+async def procesar_consulta(texto: str, lat: float, lon: float, cultivo: str) -> dict:
+    """
+    Núcleo de la lógica agroclimática. Usado tanto por texto como por audio.
+
+    Returns:
+        dict con claves:
+          - mensaje_markdown : texto formateado con Markdown para Telegram
+          - texto_tts        : texto limpio para convertir a voz
+          - keyboard         : InlineKeyboardMarkup o None
+          - tipo             : tipo de consulta (str)
+          - respuesta_ia     : texto a guardar en DB (str o None)
+    """
+    pronostico = obtener_pronostico(lat, lon)
+
+    if not pronostico:
+        msg = "No pude obtener datos del clima ahora. Intentá en unos minutos."
+        return {
+            "mensaje_markdown": f"⚠️ {msg}",
+            "texto_tts": msg,
+            "keyboard": None,
+            "tipo": "error",
+            "respuesta_ia": None,
+        }
+
+    t = texto.lower()
+
+    # --- Alertas de riesgo (respuesta fija, sin IA) ---
+    if "alerta" in t or "riesgo" in t:
+        tipo = "alerta general"
+        alerta = evaluar_riesgo_general(pronostico)
+        lluvia_3d = sum(pronostico["precipitacion"][:3])
+        if alerta == "ALERTA_INUNDACIÓN":
+            tts = (f"Alerta de inundación para tu zona. "
+                   f"Se esperan {lluvia_3d:.0f} milímetros en los próximos 3 días. "
+                   f"Tomá precauciones con maquinaria y cultivos en zonas bajas.")
+            md = f"⛔ *ALERTA DE INUNDACIÓN* para tu zona.\n{tts}"
+        elif alerta == "RIESGO_MEDIO":
+            tts = (f"Riesgo medio de lluvia intensa. "
+                   f"{lluvia_3d:.0f} milímetros esperados en 3 días. Monitorear.")
+            md = f"⚠️ {tts}"
+        else:
+            tts = "Sin alertas activas para tu zona esta semana."
+            md = f"✅ {tts}"
+        return {"mensaje_markdown": md, "texto_tts": tts,
+                "keyboard": None, "tipo": tipo, "respuesta_ia": tts}
+
+    # --- Resumen semanal (respuesta fija, sin IA) ---
+    if "resumen" in t or "semana" in t or "clima" in t:
+        tipo = "resumen"
+        p = pronostico["precipitacion"][:7]
+        v = pronostico["viento_max"][:7]
+        fechas = pronostico["fechas"][:7]
+        md = "📊 *Resumen climático — próximos 7 días:*\n\n"
+        tts = "Resumen climático de los próximos 7 días. "
+        for i in range(7):
+            lluvia = p[i] if i < len(p) else 0
+            viento = v[i] if i < len(v) else 0
+            emoji = "🌧️" if lluvia > 20 else ("🌦️" if lluvia > 5 else "☀️")
+            md += f"{emoji} {fechas[i]}: {lluvia:.0f}mm | 💨{viento:.0f}km/h\n"
+            tts += (f"{fechas[i]}: {lluvia:.0f} milímetros de lluvia "
+                    f"y viento de {viento:.0f} kilómetros por hora. ")
+        return {"mensaje_markdown": md, "texto_tts": tts,
+                "keyboard": None, "tipo": tipo, "respuesta_ia": tts}
+
+    # --- Ramas con motor de reglas + respuesta de IA ---
+    if "sembrar" in t or "siembra" in t:
+        tipo = "siembra"
+        resultado = evaluar_siembra(pronostico)
+    elif "fumigar" in t or "fumigacion" in t:
+        tipo = "fumigación"
+        resultado = evaluar_fumigacion(pronostico)
+    elif "cosechar" in t or "cosecha" in t:
+        tipo = "cosecha"
+        resultado = evaluar_cosecha(pronostico)
+    elif "herbicida" in t or "secar" in t or "secado" in t:
+        tipo = "herbicida de secado"
+        resultado = evaluar_herbicida_secado(pronostico)
+    else:
+        tipo = "consulta libre"
+        resultado = evaluar_siembra(pronostico)  # contexto base
+
+    respuesta_ia = generar_respuesta(tipo, resultado, pronostico, cultivo)
+
+    emoji_nivel = {
+        "FAVORABLE": "✅", "BAJO": "✅",
+        "MEDIO": "⚠️", "PRECAUCIÓN": "⚠️", "ESPERAR": "⚠️",
+        "ALTO": "⛔", "CRÍTICO": "⛔", "DESFAVORABLE": "⛔",
+        "ALERTA": "🚨"
+    }.get(resultado.get("nivel", ""), "ℹ️")
+
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("👍 Útil", callback_data=f"ok_{tipo}"),
+         InlineKeyboardButton("👎 No me ayudó", callback_data=f"mal_{tipo}")]
+    ])
+
+    return {
+        "mensaje_markdown": f"{emoji_nivel} *{tipo.upper()}*\n\n{respuesta_ia}",
+        "texto_tts": respuesta_ia,
+        "keyboard": keyboard,
+        "tipo": tipo,
+        "respuesta_ia": respuesta_ia,
+    }
+
+
 async def consulta_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Maneja mensajes de texto: procesa la consulta y responde con texto."""
     user = update.effective_user
     texto = update.message.text
     usuario = obtener_usuario(user.id)
@@ -114,87 +221,80 @@ async def consulta_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     _, nombre, lat, lon, cultivo, zona = usuario
-    pronostico = obtener_pronostico(lat, lon)
+    await update.message.reply_text("🌤️ Consultando el clima de tu zona...")
 
-    if not pronostico:
+    resultado = await procesar_consulta(texto, lat, lon, cultivo)
+
+    await update.message.reply_text(
+        resultado["mensaje_markdown"],
+        parse_mode="Markdown",
+        reply_markup=resultado["keyboard"]
+    )
+
+    if resultado["respuesta_ia"]:
+        guardar_consulta(user.id, resultado["tipo"], resultado["respuesta_ia"])
+
+
+async def audio_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Maneja notas de voz enviadas por el usuario.
+    Flujo: descarga OGG → Groq Whisper (STT) → procesar_consulta → edge-tts (TTS) → reply_voice.
+    Si el TTS falla, responde con texto como fallback.
+    """
+    user = update.effective_user
+    usuario = obtener_usuario(user.id)
+
+    if not usuario:
         await update.message.reply_text(
-            "⚠️ No pude obtener datos del clima ahora. Intentá en unos minutos."
+            "Primero necesito saber dónde está tu campo. Escribí /start"
         )
         return
 
-    await update.message.reply_text("🌤️ Consultando el clima de tu zona...")
+    _, nombre, lat, lon, cultivo, zona = usuario
 
-    # Determinar tipo de consulta
-    if "sembrar" in texto.lower() or "siembra" in texto.lower():
-        tipo = "siembra"
-        resultado = evaluar_siembra(pronostico)
-    elif "fumigar" in texto.lower() or "fumigacion" in texto.lower():
-        tipo = "fumigación"
-        resultado = evaluar_fumigacion(pronostico)
-    elif "cosechar" in texto.lower() or "cosecha" in texto.lower():
-        tipo = "cosecha"
-        resultado = evaluar_cosecha(pronostico)
-    elif "herbicida" in texto.lower() or "secar" in texto.lower() or "secado" in texto.lower():
-        tipo = "herbicida de secado"
-        resultado = evaluar_herbicida_secado(pronostico)
-    elif "alerta" in texto.lower() or "riesgo" in texto.lower():
-        tipo = "alerta general"
-        alerta = evaluar_riesgo_general(pronostico)
-        lluvia_3d = sum(pronostico["precipitacion"][:3])
-        if alerta == "ALERTA_INUNDACIÓN":
-            respuesta = (f"⛔ *ALERTA DE INUNDACIÓN* para tu zona.\n"
-                        f"Se esperan {lluvia_3d:.0f}mm en los próximos 3 días. "
-                        f"Tomá precauciones con maquinaria y cultivos en zonas bajas.")
-        elif alerta == "RIESGO_MEDIO":
-            respuesta = (f"⚠️ Riesgo medio de lluvia intensa.\n"
-                        f"{lluvia_3d:.0f}mm esperados en 3 días. Monitorear.")
-        else:
-            respuesta = f"✅ Sin alertas activas para tu zona esta semana."
-        await update.message.reply_text(respuesta, parse_mode="Markdown")
+    # 1. Descargar el audio de Telegram y transcribir con Groq Whisper
+    await update.message.reply_text("🎙️ Recibí tu nota de voz, transcribiendo...")
+
+    try:
+        voz_file = await update.message.voice.get_file()
+        ogg_bytes = bytes(await voz_file.download_as_bytearray())
+        texto = transcribir_audio(ogg_bytes)
+    except Exception as e:
+        logging.error(f"[audio_handler] Error STT: {e}")
+        await update.message.reply_text(
+            "❌ No pude entender el audio. Intentá de nuevo o escribí tu consulta."
+        )
         return
-    elif "resumen" in texto.lower() or "semana" in texto.lower() or "clima" in texto.lower():
-        tipo = "resumen"
-        p = pronostico["precipitacion"][:7]
-        v = pronostico["viento_max"][:7]
-        fechas = pronostico["fechas"][:7]
-        resumen = "📊 *Resumen climático — próximos 7 días:*\n\n"
-        for i in range(7):
-            lluvia = p[i] if i < len(p) else 0
-            viento = v[i] if i < len(v) else 0
-            emoji = "🌧️" if lluvia > 20 else ("🌦️" if lluvia > 5 else "☀️")
-            resumen += f"{emoji} {fechas[i]}: {lluvia:.0f}mm | 💨{viento:.0f}km/h\n"
-        await update.message.reply_text(resumen, parse_mode="Markdown")
-        return
-    else:
-        # Texto libre → Claude con contexto completo (AQUÍ ahora es Gemini)
-        tipo = "consulta libre"
-        resultado = evaluar_siembra(pronostico)  # contexto base
 
-    # Generar respuesta con Gemini
-    respuesta_ia = generar_respuesta(tipo, resultado, pronostico, cultivo)
-
-    # Emoji según nivel
-    emoji_nivel = {
-        "FAVORABLE": "✅", "BAJO": "✅",
-        "MEDIO": "⚠️", "PRECAUCIÓN": "⚠️", "ESPERAR": "⚠️",
-        "ALTO": "⛔", "CRÍTICO": "⛔", "DESFAVORABLE": "⛔",
-        "ALERTA": "🚨"
-    }.get(resultado.get("nivel", ""), "ℹ️")
-
-    mensaje_final = f"{emoji_nivel} *{tipo.upper()}*\n\n{respuesta_ia}"
-
-    # Botones de feedback
-    keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("👍 Útil", callback_data=f"ok_{tipo}"),
-         InlineKeyboardButton("👎 No me ayudó", callback_data=f"mal_{tipo}")]
-    ])
-
+    # Confirmar lo que se entendió + avisar que se consulta el clima
     await update.message.reply_text(
-        mensaje_final,
-        parse_mode="Markdown",
-        reply_markup=keyboard
+        f"📝 Entendí: _{texto}_\n\n🌤️ Consultando el clima...",
+        parse_mode="Markdown"
     )
-    guardar_consulta(user.id, tipo, respuesta_ia)
+
+    # 2. Procesar la consulta con la lógica agroclimática existente
+    resultado = await procesar_consulta(texto, lat, lon, cultivo)
+
+    # 3. Generar respuesta en audio y enviar como Voice Message
+    try:
+        audio_ogg = await texto_a_voz_ogg(resultado["texto_tts"])
+        await update.message.reply_voice(
+            voice=io.BytesIO(audio_ogg),
+            caption=resultado["mensaje_markdown"],
+            parse_mode="Markdown",
+            reply_markup=resultado["keyboard"]
+        )
+    except Exception as e:
+        logging.error(f"[audio_handler] Error TTS: {e}")
+        # Fallback: responder con texto si el audio falla
+        await update.message.reply_text(
+            resultado["mensaje_markdown"],
+            parse_mode="Markdown",
+            reply_markup=resultado["keyboard"]
+        )
+
+    if resultado["respuesta_ia"]:
+        guardar_consulta(user.id, resultado["tipo"], resultado["respuesta_ia"])
 
 async def feedback_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -228,6 +328,7 @@ def main():
 
     app.add_handler(conv_handler)
     app.add_handler(CallbackQueryHandler(feedback_callback))
+    app.add_handler(MessageHandler(filters.VOICE, audio_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, consulta_handler))
 
     print("CampoIA Bot corriendo...")

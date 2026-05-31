@@ -2,3 +2,5 @@ python-telegram-bot==21.11.1
 groq
 requests
 python-dotenv
+edge-tts          # TTS: voz es-BO-SofiaNeural (español boliviano), sin API key
+# Nota: requiere 'ffmpeg' instalado en el sistema (apt install ffmpeg)
