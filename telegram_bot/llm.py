@@ -47,6 +47,7 @@ def generar_respuesta(
     datos_pronostico,
     cultivo="soya",
     modo_detallado: bool = False,
+    horizonte: str = "hoy",
 ):
     """
     Genera la respuesta del LLM.
@@ -54,6 +55,7 @@ def generar_respuesta(
     Args:
         modo_detallado: False → respuesta simple (sí/no + 1 línea).
                         True  → respuesta técnica con datos climáticos.
+        horizonte: Período temporal evaluado ("hoy", "mañana", "en 3 días", etc.).
     """
     system_prompt = SYSTEM_PROMPT_DETALLADO if modo_detallado else SYSTEM_PROMPT_SIMPLE
 
@@ -61,12 +63,13 @@ def generar_respuesta(
     # En modo simple solo el contexto mínimo para que el LLM decida.
     if modo_detallado:
         resumen_clima = f"""
-Proximos 7 dias en la zona del agricultor:
-- Precipitacion acumulada: {sum(datos_pronostico['precipitacion'][:7]):.0f}mm
-- Dia mas lluvioso: {max(datos_pronostico['precipitacion'][:7]):.0f}mm
-- Viento maximo hoy: {datos_pronostico['viento_max'][0]:.0f} km/h
-- Temperatura max. hoy: {datos_pronostico['temp_max'][0]:.0f} grados C
-- Decision del sistema: {resultado_reglas.get('decision', 'N/A')}
+Período evaluado: {horizonte}
+Pronóstico desde ese momento (próximos 7 días a partir de {horizonte}):
+- Precipitación acumulada: {sum(datos_pronostico['precipitacion'][:7]):.0f}mm
+- Día más lluvioso: {max(datos_pronostico['precipitacion'][:7]):.0f}mm
+- Viento máximo el {horizonte}: {datos_pronostico['viento_max'][0]:.0f} km/h
+- Temperatura máx. el {horizonte}: {datos_pronostico['temp_max'][0]:.0f} grados C
+- Decisión del sistema: {resultado_reglas.get('decision', 'N/A')}
 - Nivel de riesgo: {resultado_reglas.get('nivel', 'N/A')}
 - Dato clave: {resultado_reglas.get('dato', 'N/A')}
 - Consejo base: {resultado_reglas.get('consejo', 'N/A')}
@@ -75,16 +78,22 @@ Proximos 7 dias en la zona del agricultor:
         max_tokens = 350
     else:
         resumen_clima = f"""
-Situacion climatica resumida:
-- Lluvia proximos 7 dias: {sum(datos_pronostico['precipitacion'][:7]):.0f}mm en total
-- Viento hoy: {datos_pronostico['viento_max'][0]:.0f} km/h
-- Decision del sistema: {resultado_reglas.get('decision', 'N/A')}
+Período evaluado: {horizonte}
+Situación climática el {horizonte}:
+- Lluvia en los próximos 7 días a partir de {horizonte}: {sum(datos_pronostico['precipitacion'][:7]):.0f}mm en total
+- Viento el {horizonte}: {datos_pronostico['viento_max'][0]:.0f} km/h
+- Decisión del sistema: {resultado_reglas.get('decision', 'N/A')}
 - Consejo base: {resultado_reglas.get('consejo', 'N/A')}
 - Cultivo: {cultivo}
 """
         max_tokens = 80  # forzar respuesta corta
 
-    mensaje_usuario = f"El agricultor pregunta sobre: {pregunta_tipo}\n{resumen_clima}"
+    mensaje_usuario = (
+        f"El agricultor pregunta sobre: {pregunta_tipo}\n"
+        f"IMPORTANTE: La consulta es para '{horizonte}', no para hoy. "
+        f"Respondé mencionando '{horizonte}' en tu respuesta.\n"
+        f"{resumen_clima}"
+    )
 
     try:
         response = client.chat.completions.create(

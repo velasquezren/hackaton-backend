@@ -1,5 +1,6 @@
 import io
 import logging
+import re
 from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, MessageHandler,
@@ -121,6 +122,61 @@ def detectar_modo_detallado(texto: str) -> bool:
     return any(p in t for p in palabras_tecnicas)
 
 
+# Palabras escritas como texto → número de días
+_NUMEROS_ES = {
+    "un": 1, "uno": 1, "una": 1, "dos": 2, "tres": 3, "cuatro": 4,
+    "cinco": 5, "seis": 6, "siete": 7, "ocho": 8, "nueve": 9, "diez": 10,
+}
+
+
+def detectar_horizonte_dias(texto: str) -> tuple:
+    """
+    Detecta el horizonte temporal de la consulta del usuario.
+    Ejemplos: 'mañana', 'pasado mañana', 'en 3 días', 'de aquí a tres días'.
+
+    Returns:
+        (offset_dias, etiqueta)
+        offset_dias : número de días desde hoy (0 = hoy).
+        etiqueta    : texto para el LLM ('hoy', 'mañana', 'en 3 días', etc.).
+    """
+    t = texto.lower()
+
+    # 'pasado mañana' antes de 'mañana' para evitar match parcial
+    if "pasado mañana" in t or "pasado manana" in t:
+        return 2, "pasado mañana"
+
+    if "mañana" in t or "manana" in t:
+        return 1, "mañana"
+
+    # Patrones numéricos: 'en X días', 'de aquí a X días', 'dentro de X días'
+    patron = re.compile(
+        r"(?:de\s+aqu[ií]\s+a|dentro\s+de|en)\s+(\w+)\s+d[ií]as?",
+        re.IGNORECASE,
+    )
+    m = patron.search(t)
+    if m:
+        num_str = m.group(1).strip()
+        n = int(num_str) if num_str.isdigit() else _NUMEROS_ES.get(num_str)
+        if n and 1 <= n <= 15:
+            return n, f"en {n} días"
+
+    return 0, "hoy"
+
+
+def desplazar_pronostico(pronostico: dict, offset: int) -> dict:
+    """
+    Desplaza todos los datos del pronóstico X días hacia adelante.
+    Así las funciones de reglas evaluarán el período correcto.
+    Por ejemplo, offset=3 hace que el índice 0 represente 'en 3 días'.
+    """
+    if offset <= 0:
+        return pronostico
+    return {
+        key: (valores[offset:] if isinstance(valores, list) else valores)
+        for key, valores in pronostico.items()
+    }
+
+
 async def procesar_consulta(texto: str, lat: float, lon: float, cultivo: str) -> dict:
     """
     Núcleo de la lógica agroclimática. Usado tanto por texto como por audio.
@@ -146,6 +202,9 @@ async def procesar_consulta(texto: str, lat: float, lon: float, cultivo: str) ->
         }
 
     t = texto.lower()
+    offset_dias, horizonte = detectar_horizonte_dias(texto)
+    if offset_dias > 0:
+        pronostico = desplazar_pronostico(pronostico, offset_dias)
 
     # --- Alertas de riesgo (respuesta fija, sin IA) ---
     if "alerta" in t or "riesgo" in t:
@@ -203,7 +262,9 @@ async def procesar_consulta(texto: str, lat: float, lon: float, cultivo: str) ->
         resultado = evaluar_siembra(pronostico)  # contexto base
 
     modo_detallado = detectar_modo_detallado(texto)
-    respuesta_ia = generar_respuesta(tipo, resultado, pronostico, cultivo, modo_detallado)
+    respuesta_ia = generar_respuesta(
+        tipo, resultado, pronostico, cultivo, modo_detallado, horizonte
+    )
 
     emoji_nivel = {
         "FAVORABLE": "✅", "BAJO": "✅",
