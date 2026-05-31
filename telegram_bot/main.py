@@ -104,6 +104,23 @@ async def recibir_cultivo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     return ConversationHandler.END
 
+
+def detectar_modo_detallado(texto: str) -> bool:
+    """
+    Devuelve True si el usuario pidía explícitamente una respuesta técnica o detallada.
+    Cualquier otra consulta usa el modo simple (sí/no + 1 línea).
+    """
+    palabras_tecnicas = [
+        "tecnic", "detall", "dato", "datos", "informaci",
+        "por qué", "por que", "explicame", "explícame", "explica",
+        "cuánto", "cuanto", "número", "numero",
+        "mm ", " mm", "km/h", "precipit", "milim",
+        "temp", "grado", "porcentaje", "estadistica",
+    ]
+    t = texto.lower()
+    return any(p in t for p in palabras_tecnicas)
+
+
 async def procesar_consulta(texto: str, lat: float, lon: float, cultivo: str) -> dict:
     """
     Núcleo de la lógica agroclimática. Usado tanto por texto como por audio.
@@ -185,7 +202,8 @@ async def procesar_consulta(texto: str, lat: float, lon: float, cultivo: str) ->
         tipo = "consulta libre"
         resultado = evaluar_siembra(pronostico)  # contexto base
 
-    respuesta_ia = generar_respuesta(tipo, resultado, pronostico, cultivo)
+    modo_detallado = detectar_modo_detallado(texto)
+    respuesta_ia = generar_respuesta(tipo, resultado, pronostico, cultivo, modo_detallado)
 
     emoji_nivel = {
         "FAVORABLE": "✅", "BAJO": "✅",
@@ -199,8 +217,15 @@ async def procesar_consulta(texto: str, lat: float, lon: float, cultivo: str) ->
          InlineKeyboardButton("👎 No me ayudó", callback_data=f"mal_{tipo}")]
     ])
 
+    # En modo simple el LLM ya incluye su propio ✅/❌/⚠️,
+    # así que solo agregamos el tipo como cabecera pequeña.
+    if modo_detallado:
+        mensaje_markdown = f"{emoji_nivel} *{tipo.upper()} — Respuesta técnica*\n\n{respuesta_ia}"
+    else:
+        mensaje_markdown = f"*{tipo.capitalize()}*\n{respuesta_ia}"
+
     return {
-        "mensaje_markdown": f"{emoji_nivel} *{tipo.upper()}*\n\n{respuesta_ia}",
+        "mensaje_markdown": mensaje_markdown,
         "texto_tts": respuesta_ia,
         "keyboard": keyboard,
         "tipo": tipo,
